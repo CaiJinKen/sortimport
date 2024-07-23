@@ -8,9 +8,11 @@ import (
 )
 
 var (
-	filename        = flag.String("file", "", "filename")
-	shouldWriteBack = flag.Bool("w", false, "write back")
-	version         = flag.String("version", "", "print version")
+	filename    = flag.String("file", "", "filename")
+	writeback   = flag.Bool("writeback", false, "writeback to the file")
+	stdOut      = flag.Bool("std-out", true, "print info into stdout")
+	onlyChanged = flag.Bool("only-changed", false, "just print changed line, false will print all info")
+	version     = flag.String("version", "", "print version")
 )
 
 func main() {
@@ -31,7 +33,7 @@ func main() {
 
 	handler := newHandler(*filename)
 	handler.start()
-	if *shouldWriteBack {
+	if *writeback || *stdOut {
 		handler.writeBack()
 	} else {
 		handler.print()

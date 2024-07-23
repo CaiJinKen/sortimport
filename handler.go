@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -21,6 +22,9 @@ type handler struct {
 	sdk, inner, outer, result []*ast.ImportSpec
 	fset                      *token.FileSet
 	file                      ast.Node
+
+	firstDecl *ast.GenDecl
+	all       []ast.Spec
 }
 
 func newHandler(filename string) *handler {
@@ -35,6 +39,9 @@ func (h *handler) start() {
 		log.Fatalf("Failed to parse file: %v", err)
 	}
 	ast.Inspect(node, h.travel)
+
+	h.firstDecl.Specs = h.sortimport(h.all)
+	h.delDecl()
 }
 
 func (h *handler) travel(node ast.Node) (ok bool) {
@@ -43,12 +50,34 @@ func (h *handler) travel(node ast.Node) (ok bool) {
 		return true
 	}
 	if impDecl, ok := node.(*ast.GenDecl); ok && impDecl.Tok == token.IMPORT {
-		if len(impDecl.Specs) > 1 {
-			impDecl.Specs = h.sortimport(impDecl.Specs)
-			return false
+		if len(impDecl.Specs) > 0 {
+			h.all = append(h.all, impDecl.Specs...)
+			if h.firstDecl == nil {
+				h.firstDecl = impDecl
+			} else {
+				impDecl.Specs = []ast.Spec{getEmptyImport()}
+			}
+			// impDecl.Specs = h.sortimport(impDecl.Specs)
+			// return false
 		}
 	}
 	return true
+}
+
+func (h *handler) delDecl() {
+	root, ok := h.file.(*ast.File)
+	if !ok {
+		return
+	}
+	var decls []ast.Decl
+	for _, v := range root.Decls {
+		im, ok := v.(*ast.GenDecl)
+		if !ok || im.Tok != token.IMPORT || h.firstDecl == v {
+			decls = append(decls, v)
+		}
+
+	}
+	root.Decls = decls
 }
 
 func (h *handler) sortimport(list []ast.Spec) (result []ast.Spec) {
@@ -109,24 +138,51 @@ func (h *handler) group() (list []ast.Spec) {
 
 // writeBack write back to the source file
 func (h *handler) writeBack() (err error) {
-	var buf bytes.Buffer
-	if err = printer.Fprint(&buf, h.fset, h.file); err != nil {
+	var writers []io.Writer
+	if *stdOut {
+		if *onlyChanged {
+			h.printLine()
+		} else {
+			writers = append(writers, os.Stdout)
+		}
+	}
+
+	if *writeback {
+		f, err := os.OpenFile(h.filename, os.O_RDWR, 0o66)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		writers = append(writers, f)
+	}
+
+	if len(writers) == 0 {
 		return
 	}
+	var buf bytes.Buffer
+	printer.Fprint(&buf, h.fset, h.file)
 	data, err := format.Source(buf.Bytes())
 	if err != nil {
 		return
 	}
 
-	w, err := os.OpenFile(h.filename, os.O_RDWR, 0o666)
-	if err != nil {
-		return
-	}
-	defer w.Close()
+	w := io.MultiWriter(writers...)
 
 	_, err = w.Write(data)
 
-	return nil
+	return
+}
+
+func (h *handler) printLine() {
+	var buf bytes.Buffer
+	printer.Fprint(&buf, h.fset, h.firstDecl)
+	data, err := format.Source(buf.Bytes())
+	if err != nil {
+		return
+	}
+
+	os.Stdout.Write(data)
 }
 
 func (h *handler) print() (err error) {
