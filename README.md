@@ -2,6 +2,19 @@
 # sortimport
 
 Sort/group imports in golang file
+The order follows:
+
+```go
+import (
+    sdk-packages   // eg: io/os ...
+
+    inner-packages // self-define packages in current project
+
+    outer-packages // eg: github.com/user/repo
+
+)
+
+```
 
 ## Installation
 
@@ -31,4 +44,3 @@ Flags:
 -writeback
     writeback to the file
 ```
-
