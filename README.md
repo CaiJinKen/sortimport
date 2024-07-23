@@ -2,6 +2,7 @@
 # sortimport
 
 Sort/group imports in golang file
+
 The order follows:
 
 ```go
